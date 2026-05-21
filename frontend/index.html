@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encyclopédie — Savoirs d'avant 1939</title>
+    <meta name="description" content="Application IA locale pour consulter les encyclopédies françaises libres de droits d'avant 1939. Agriculture, histoire, géographie, sciences.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+    <!-- Decorative background elements -->
+    <div class="bg-grain"></div>
+    <div class="bg-vignette"></div>
+
+    <!-- Header -->
+    <header id="app-header">
+        <div class="header-inner">
+            <div class="logo-group">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="6" y="4" width="28" height="38" rx="2" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <rect x="14" y="8" width="28" height="38" rx="2" stroke="currentColor" stroke-width="2" fill="none" opacity="0.5"/>
+                        <line x1="12" y1="14" x2="28" y2="14" stroke="currentColor" stroke-width="1.5"/>
+                        <line x1="12" y1="20" x2="28" y2="20" stroke="currentColor" stroke-width="1"/>
+                        <line x1="12" y1="25" x2="24" y2="25" stroke="currentColor" stroke-width="1"/>
+                        <line x1="12" y1="30" x2="26" y2="30" stroke="currentColor" stroke-width="1"/>
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <h1>Encyclopédie</h1>
+                    <p class="logo-subtitle">Savoirs d'avant 1939 — Édition libre de droits</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="btn-clear-chat" class="btn-icon" title="Nouvelle conversation" aria-label="Nouvelle conversation">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14"/>
+                        <path d="M5 12h14"/>
+                    </svg>
+                </button>
+                <button id="btn-status" class="btn-icon" title="État du système" aria-label="Vérifier l'état du système">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
+                    </svg>
+                </button>
+                <button id="btn-settings" class="btn-icon" title="Paramètres" aria-label="Paramètres">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="app-main">
+        <!-- Welcome / Empty State -->
+        <section id="welcome-section" class="fade-in">
+            <div class="welcome-content">
+                <div class="welcome-ornament">❧</div>
+                <h2>Interrogez les savoirs anciens</h2>
+                <p class="welcome-desc">
+                    Posez une question sur l'agriculture, l'histoire, la géographie, les sciences ou tout autre sujet 
+                    tel qu'il était documenté dans les encyclopédies françaises d'avant 1939.
+                </p>
+                <div class="suggestion-grid">
+                    <button class="suggestion-card" data-question="Comment cultivait-on le blé en France avant la guerre ?">
+                        <span class="suggestion-icon">🌾</span>
+                        <span class="suggestion-text">La culture du blé en France</span>
+                    </button>
+                    <button class="suggestion-card" data-question="Quelles étaient les principales races bovines en France en 1936 ?">
+                        <span class="suggestion-icon">🐄</span>
+                        <span class="suggestion-text">Les races bovines françaises</span>
+                    </button>
+                    <button class="suggestion-card" data-question="Que sait-on de la viticulture et des cépages français ?">
+                        <span class="suggestion-icon">🍇</span>
+                        <span class="suggestion-text">Viticulture et cépages</span>
+                    </button>
+                    <button class="suggestion-card" data-question="Quelle était la situation politique de l'Afrique en 1936 ?">
+                        <span class="suggestion-icon">🌍</span>
+                        <span class="suggestion-text">L'Afrique en 1936</span>
+                    </button>
+                    <button class="suggestion-card" data-question="Quels étaient les principes de nutrition et d'alimentation connus à l'époque ?">
+                        <span class="suggestion-icon">🍞</span>
+                        <span class="suggestion-text">Nutrition et alimentation</span>
+                    </button>
+                    <button class="suggestion-card" data-question="Quel était l'empire colonial français et ses territoires ?">
+                        <span class="suggestion-icon">🗺️</span>
+                        <span class="suggestion-text">L'Empire colonial français</span>
+                    </button>
+                </div>
+                <div id="recent-questions" class="recent-questions hidden">
+                    <div class="recent-title">Questions récentes</div>
+                    <div id="recent-list" class="recent-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Chat Messages Area -->
+        <section id="chat-messages" class="hidden">
+            <!-- Messages will be injected here -->
+        </section>
+    </main>
+
+    <!-- Input Area -->
+    <footer id="input-area">
+        <div class="input-inner">
+            <div class="input-wrapper">
+                <textarea 
+                    id="question-input" 
+                    placeholder="Posez votre question à l'encyclopédie…" 
+                    rows="1"
+                    aria-label="Votre question"
+                ></textarea>
+                <button id="btn-send" class="btn-send" title="Envoyer" aria-label="Envoyer la question" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"/>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="input-footer">
+                <div class="query-controls">
+                    <label class="select-control">
+                        <span>Modèle</span>
+                        <select id="model-select">
+                            <option value="">Par défaut</option>
+                        </select>
+                    </label>
+                    <label class="range-control">
+                        <span>Sources</span>
+                        <input id="top-k-input" type="range" min="2" max="10" value="5">
+                        <output id="top-k-value">5</output>
+                    </label>
+                </div>
+                <div class="system-pill">
+                    <span id="status-indicator" class="status-dot status-checking"></span>
+                    <span id="status-text">Vérification du système…</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Settings Modal -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal" id="settings-modal">
+            <div class="modal-header">
+                <h3>Paramètres & Administration</h3>
+                <button class="modal-close" id="modal-close" aria-label="Fermer">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Status Section -->
+                <div class="settings-section">
+                    <h4>État du système</h4>
+                    <div id="system-status-details" class="status-details">
+                        <div class="status-row">
+                            <span>Ollama</span>
+                            <span id="detail-ollama" class="status-value">—</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Modèles disponibles</span>
+                            <span id="detail-models" class="status-value">—</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Documents indexés</span>
+                            <span id="detail-docs" class="status-value">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions Section -->
+                <div class="settings-section">
+                    <h4>Gestion des données</h4>
+                    <div class="action-buttons">
+                        <button id="btn-ingest" class="btn-action btn-primary">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Indexer les documents
+                        </button>
+                        <button id="btn-reset" class="btn-action btn-danger">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                            </svg>
+                            Réinitialiser la base
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Documents Section -->
+                <div class="settings-section">
+                    <h4>Documents disponibles</h4>
+                    <div id="documents-list" class="documents-list">
+                        <p class="text-muted">Chargement…</p>
+                    </div>
+                </div>
+
+                <!-- Upload Section -->
+                <div class="settings-section">
+                    <h4>Ajouter un document</h4>
+                    <div class="upload-zone" id="upload-zone">
+                        <input type="file" id="file-input" accept=".txt,.md" hidden>
+                        <p>Glissez un fichier .txt ou .md ici<br><small>ou cliquez pour sélectionner</small></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/assets/app.js"></script>
+</body>
+</html>
