@@ -3,7 +3,9 @@
  * Handles chat interactions, RAG queries, and admin functions
  */
 
-const API_BASE = window.location.origin;
+const API_BASE = (window.location.origin && window.location.origin !== 'null' && window.location.protocol.startsWith('http')) 
+    ? window.location.origin 
+    : 'http://localhost:8900';
 
 // ── DOM Elements ──
 const welcomeSection = document.getElementById('welcome-section');
@@ -233,11 +235,12 @@ async function sendQuestion() {
             
             buffer += decoder.decode(value, { stream: true });
             
-            let boundary = buffer.indexOf('\n\n');
-            while (boundary !== -1) {
-                const line = buffer.slice(0, boundary);
-                buffer = buffer.slice(boundary + 2);
+            let lineEnd = buffer.indexOf('\n');
+            while (lineEnd !== -1) {
+                const rawLine = buffer.slice(0, lineEnd);
+                buffer = buffer.slice(lineEnd + 1);
                 
+                const line = rawLine.trim();
                 if (line.startsWith("data: ")) {
                     try {
                         const data = JSON.parse(line.slice(6));
@@ -290,7 +293,7 @@ async function sendQuestion() {
                         console.error("Error parsing stream chunk", e, line);
                     }
                 }
-                boundary = buffer.indexOf('\n\n');
+                lineEnd = buffer.indexOf('\n');
             }
         }
 
