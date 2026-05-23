@@ -300,7 +300,7 @@ async def ollama_list_models() -> list[str]:
             response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
             response.raise_for_status()
             data = response.json()
-            return [m["name"] for m in data.get("models", [])]
+            return [m["name"] for m in data.get("models", []) if "embed" not in m["name"].lower()]
     except Exception:
         return []
 
@@ -547,12 +547,16 @@ Réponds en t'appuyant uniquement sur les extraits ci-dessus."""
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
         
         # Step 2: Stream tokens from Ollama
-        async for token in ollama_chat_stream(user_prompt, system=system_prompt, model=used_model):
-            yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
-            
-        # Step 3: Send final metadata (elapsed time, etc.)
-        elapsed = time.time() - start_time
-        yield f"data: {json.dumps({'type': 'done', 'elapsed_seconds': round(elapsed, 2), 'model': used_model})}\n\n"
+        try:
+            async for token in ollama_chat_stream(user_prompt, system=system_prompt, model=used_model):
+                yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+                
+            # Step 3: Send final metadata (elapsed time, etc.)
+            elapsed = time.time() - start_time
+            yield f"data: {json.dumps({'type': 'done', 'elapsed_seconds': round(elapsed, 2), 'model': used_model})}\n\n"
+        except Exception as e:
+            error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
+            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
         
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 

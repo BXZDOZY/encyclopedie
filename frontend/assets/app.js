@@ -263,6 +263,10 @@ async function sendQuestion() {
                             metaContainer.innerHTML = `<span class="meta-model">${data.model}</span><span class="meta-time">${data.elapsed_seconds}s</span>`;
                             saveRecentQuestion(question);
                             scrollToBottom();
+                        } else if (data.type === 'error') {
+                            fullText += `\n\n**⚠️ Erreur :** ${data.message}`;
+                            textContainer.innerHTML = marked.parse(fullText);
+                            scrollToBottom();
                         }
                     } catch (e) {
                         console.error("Error parsing stream chunk", e);
