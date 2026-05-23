@@ -16,10 +16,12 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, UploadFile, File
+import logging
+import traceback
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 import chromadb
@@ -31,6 +33,18 @@ DATA_DIR = BASE_DIR / "data"
 RAW_DIR = DATA_DIR / "raw"
 CHROMA_DIR = BASE_DIR / "chroma_db"
 FRONTEND_DIR = BASE_DIR / "frontend"
+
+# Configure logging
+LOG_FILE = BASE_DIR / "app.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] (%(filename)s:%(lineno)d) - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("encyclopedie")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
@@ -55,6 +69,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    
+    error_msg = f"Erreur interne lors de la requête {request.method} {request.url.path} : {str(exc)}"
+    logger.error(error_msg)
+    logger.error(traceback.format_exc())
+    
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{error_msg}\n\nTraceback :\n{traceback.format_exc()}"}
+    )
 
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
 

@@ -121,12 +121,30 @@ function autoResizeTextarea() {
     questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + 'px';
 }
 
+// ── API Helper ──
+async function apiRequest(url, options = {}) {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get("content-type") || "";
+    let data;
+    
+    if (contentType.includes("application/json")) {
+        data = await res.json();
+    } else {
+        const text = await res.text();
+        data = { detail: text || `Erreur serveur (${res.status})` };
+    }
+    
+    if (!res.ok) {
+        throw new Error(data.detail || data.message || `Erreur serveur (${res.status})`);
+    }
+    return data;
+}
+
 // ── API Calls ──
 
 async function checkStatus() {
     try {
-        const res = await fetch(`${API_BASE}/api/status`);
-        const data = await res.json();
+        const data = await apiRequest(`${API_BASE}/api/status`);
 
         if (data.ollama_connected) {
             statusIndicator.className = 'status-dot status-ok';
@@ -173,18 +191,11 @@ async function sendQuestion() {
     const typingEl = appendTyping();
 
     try {
-        const res = await fetch(`${API_BASE}/api/ask`, {
+        const data = await apiRequest(`${API_BASE}/api/ask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question, top_k: topK, model: selectedModel })
         });
-
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.detail || 'Erreur serveur');
-        }
-
-        const data = await res.json();
         typingEl.remove();
 
         // Add assistant message
@@ -205,14 +216,8 @@ async function ingestDocuments() {
     btnIngest.textContent = 'Indexation en cours…';
 
     try {
-        const res = await fetch(`${API_BASE}/api/ingest`, { method: 'POST' });
-        const data = await res.json();
-
-        if (res.ok) {
-            showToast(data.message, 'success');
-        } else {
-            showToast(data.detail || 'Erreur lors de l\'indexation', 'error');
-        }
+        const data = await apiRequest(`${API_BASE}/api/ingest`, { method: 'POST' });
+        showToast(data.message, 'success');
         checkStatus();
     } catch (e) {
         showToast(`Erreur : ${e.message}`, 'error');
@@ -229,8 +234,7 @@ async function resetDatabase() {
     if (!confirm('Réinitialiser la base vectorielle ? Tous les index seront supprimés.')) return;
 
     try {
-        const res = await fetch(`${API_BASE}/api/reset`, { method: 'DELETE' });
-        const data = await res.json();
+        const data = await apiRequest(`${API_BASE}/api/reset`, { method: 'DELETE' });
         showToast(data.message, 'success');
         checkStatus();
     } catch (e) {
@@ -240,8 +244,7 @@ async function resetDatabase() {
 
 async function loadDocumentsList() {
     try {
-        const res = await fetch(`${API_BASE}/api/documents`);
-        const data = await res.json();
+        const data = await apiRequest(`${API_BASE}/api/documents`);
         const listEl = document.getElementById('documents-list');
 
         if (data.documents.length === 0) {
@@ -268,15 +271,9 @@ async function handleFileUpload() {
     formData.append('file', file);
 
     try {
-        const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: formData });
-        const data = await res.json();
-
-        if (res.ok) {
-            showToast(data.message, 'success');
-            loadDocumentsList();
-        } else {
-            showToast(data.detail || 'Erreur', 'error');
-        }
+        const data = await apiRequest(`${API_BASE}/api/upload`, { method: 'POST', body: formData });
+        showToast(data.message, 'success');
+        loadDocumentsList();
     } catch (e) {
         showToast(`Erreur : ${e.message}`, 'error');
     }

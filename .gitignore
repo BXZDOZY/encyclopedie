@@ -1,0 +1,23 @@
+# Environnement virtuel Python
+venv/
+.venv/
+env/
+ENV/
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Base de données vectorielle locale (ChromaDB)
+chroma_db/
+
+# Fichiers de logs du projet
+app.log
+*.log
+
+# Fichiers système et IDE
+.DS_Store
+.vscode/
+.idea/
