@@ -18,10 +18,12 @@ from typing import Optional
 import httpx
 import logging
 import traceback
+import re
+import json
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 import chromadb
@@ -45,6 +47,60 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("encyclopedie")
+
+KEYWORDS_ROUTING = {
+    "ble": ["agriculture_ble"],
+    "blé": ["agriculture_ble"],
+    "froment": ["agriculture_ble"],
+    "culture": ["agriculture_ble", "agriculture_vigne", "agriculture_elevage"],
+    "bovin": ["agriculture_elevage"],
+    "bœuf": ["agriculture_elevage"],
+    "boeuf": ["agriculture_elevage"],
+    "vache": ["agriculture_elevage"],
+    "elevage": ["agriculture_elevage"],
+    "élevage": ["agriculture_elevage"],
+    "mouton": ["agriculture_elevage"],
+    "vigne": ["agriculture_vigne"],
+    "vin": ["agriculture_vigne"],
+    "viticulture": ["agriculture_vigne", "agriculture_ble"],
+    "cépage": ["agriculture_vigne"],
+    "cepage": ["agriculture_vigne"],
+    "alimentation": ["alimentation_nutrition"],
+    "nutrition": ["alimentation_nutrition"],
+    "manger": ["alimentation_nutrition"],
+    "nourriture": ["alimentation_nutrition"],
+    "afrique": ["geographie_afrique"],
+    "colonial": ["geographie_afrique"],
+    "colonie": ["geographie_afrique"],
+    "territoire": ["geographie_afrique"],
+    "france": ["histoire_france"],
+    "histoire": ["histoire_france"],
+    "guerre": ["histoire_france", "geographie_afrique", "sciences_aviation"],
+    "aviation": ["sciences_aviation"],
+    "voler": ["sciences_aviation"],
+    "avion": ["sciences_aviation"],
+    "aéroplane": ["sciences_aviation"],
+    "aeroplane": ["sciences_aviation"],
+    "blériot": ["sciences_aviation"],
+    "bleriot": ["sciences_aviation"],
+    "mermoz": ["sciences_aviation"],
+    "ader": ["sciences_aviation"],
+    "physique": ["sciences_physique"],
+    "radioactivité": ["sciences_physique"],
+    "radioactivite": ["sciences_physique"],
+    "curie": ["sciences_physique"],
+    "radium": ["sciences_physique"],
+    "becquerel": ["sciences_physique"],
+    "atome": ["sciences_physique"],
+    "cinéma": ["arts_cinema"],
+    "cinema": ["arts_cinema"],
+    "film": ["arts_cinema"],
+    "lumière": ["arts_cinema"],
+    "lumiere": ["arts_cinema"],
+    "méliès": ["arts_cinema"],
+    "melies": ["arts_cinema"],
+    "projection": ["arts_cinema"]
+}
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
@@ -180,6 +236,52 @@ async def ollama_chat(prompt: str, system: str = "", model: str = None) -> str:
             response.raise_for_status()
             data = response.json()
             return data["message"]["content"]
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Ollama ne répond pas assez vite avec le modèle de chat '{used_model}'."
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erreur Ollama pendant la génération avec '{used_model}' : {exc}"
+        ) from exc
+
+async def ollama_chat_stream(prompt: str, system: str = "", model: str = None):
+    """Chat with the Ollama model and stream response chunks."""
+    used_model = model or CHAT_MODEL
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream(
+                "POST",
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": used_model,
+                    "messages": messages,
+                    "stream": True,
+                    "options": {
+                        "temperature": 0.3,
+                        "top_p": 0.9,
+                        "num_ctx": 2048,
+                        "num_predict": 512,
+                    }
+                }
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.strip():
+                        try:
+                            chunk_data = json.loads(line)
+                            content = chunk_data.get("message", {}).get("content", "")
+                            if content:
+                                yield content
+                        except Exception:
+                            pass
     except httpx.TimeoutException as exc:
         raise HTTPException(
             status_code=504,
@@ -357,9 +459,9 @@ async def upload_document(file: UploadFile = File(...)):
     
     return {"message": f"Fichier '{filename}' enregistré. Lancez l'indexation pour l'intégrer."}
 
-@app.post("/api/ask", response_model=AnswerResponse)
+@app.post("/api/ask")
 async def ask_question(request: QuestionRequest):
-    """Ask a question to the encyclopédie."""
+    """Ask a question to the encyclopédie with streaming and intelligent routing."""
     start_time = time.time()
     collection = get_collection()
     question = request.question.strip()
@@ -370,15 +472,30 @@ async def ask_question(request: QuestionRequest):
             detail="Aucun document indexé. Veuillez d'abord lancer l'indexation via /api/ingest"
         )
     
+    # Intelligent Keyword Routing
+    words = re.findall(r'\w+', question.lower())
+    target_sources = set()
+    for word in words:
+        if word in KEYWORDS_ROUTING:
+            target_sources.update(KEYWORDS_ROUTING[word])
+    
+    query_kwargs = {
+        "n_results": min(request.top_k, collection.count()),
+        "include": ["documents", "metadatas", "distances"]
+    }
+    
+    if target_sources:
+        if len(target_sources) == 1:
+            query_kwargs["where"] = {"source": list(target_sources)[0]}
+        else:
+            query_kwargs["where"] = {"source": {"$in": list(target_sources)}}
+    
     # Embed the question
     question_embedding = await ollama_embed([question])
+    query_kwargs["query_embeddings"] = question_embedding
     
     # Search in ChromaDB
-    results = collection.query(
-        query_embeddings=question_embedding,
-        n_results=min(request.top_k, collection.count()),
-        include=["documents", "metadatas", "distances"]
-    )
+    results = collection.query(**query_kwargs)
     
     # Build context from retrieved documents
     sources = []
@@ -391,11 +508,11 @@ async def ask_question(request: QuestionRequest):
             results["distances"][0]
         ):
             score = 1 - distance  # Convert distance to similarity
-            sources.append(SourceDocument(
-                content=doc[:500],
-                source=meta.get("source", "inconnu"),
-                score=round(score, 3)
-            ))
+            sources.append({
+                "content": doc[:500],
+                "source": meta.get("source", "inconnu"),
+                "score": round(score, 3)
+            })
             context_parts.append(doc)
     
     context = "\n\n---\n\n".join(context_parts)
@@ -425,17 +542,19 @@ Réponds en t'appuyant uniquement sur les extraits ci-dessus."""
 
     used_model = request.model or CHAT_MODEL
     
-    # Get the answer from Ollama
-    answer = await ollama_chat(user_prompt, system=system_prompt, model=used_model)
-    
-    elapsed = time.time() - start_time
-    
-    return AnswerResponse(
-        answer=answer,
-        sources=sources,
-        model=used_model,
-        elapsed_seconds=round(elapsed, 2)
-    )
+    async def sse_generator():
+        # Step 1: Send sources
+        yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+        
+        # Step 2: Stream tokens from Ollama
+        async for token in ollama_chat_stream(user_prompt, system=system_prompt, model=used_model):
+            yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+            
+        # Step 3: Send final metadata (elapsed time, etc.)
+        elapsed = time.time() - start_time
+        yield f"data: {json.dumps({'type': 'done', 'elapsed_seconds': round(elapsed, 2), 'model': used_model})}\n\n"
+        
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
 @app.delete("/api/reset")
 async def reset_collection():

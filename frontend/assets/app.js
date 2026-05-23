@@ -191,19 +191,88 @@ async function sendQuestion() {
     const typingEl = appendTyping();
 
     try {
-        const data = await apiRequest(`${API_BASE}/api/ask`, {
+        const response = await fetch(`${API_BASE}/api/ask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question, top_k: topK, model: selectedModel })
         });
-        typingEl.remove();
 
-        // Add assistant message
-        appendMessage('assistant', data.answer, data.sources, data.model, data.elapsed_seconds);
-        saveRecentQuestion(question);
+        if (!response.ok) {
+            let errorMsg = `Erreur serveur (${response.status})`;
+            try { const errData = await response.json(); errorMsg = errData.detail || errorMsg; } catch(e){}
+            throw new Error(errorMsg);
+        }
+
+        typingEl.remove();
+        
+        // Prepare UI for the assistant's streaming answer
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant-message';
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                <div class="message-text"></div>
+                <div class="sources-container" style="margin-top: 15px;"></div>
+                <div class="message-meta" style="margin-top: 10px;"></div>
+            </div>
+        `;
+        chatMessages.appendChild(messageDiv);
+        const textContainer = messageDiv.querySelector('.message-text');
+        const sourcesContainer = messageDiv.querySelector('.sources-container');
+        const metaContainer = messageDiv.querySelector('.message-meta');
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let fullText = "";
+        let sourcesData = [];
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n\n');
+            
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        
+                        if (data.type === 'sources') {
+                            sourcesData = data.sources;
+                        } else if (data.type === 'token') {
+                            fullText += data.token;
+                            textContainer.innerHTML = marked.parse(fullText);
+                            scrollToBottom();
+                        } else if (data.type === 'done') {
+                            // Render sources
+                            if (sourcesData && sourcesData.length > 0) {
+                                sourcesData.forEach((src, idx) => {
+                                    const sourceEl = document.createElement('div');
+                                    sourceEl.className = 'source-card';
+                                    sourceEl.innerHTML = `
+                                        <div class="source-header">
+                                            <span class="source-title">Source ${idx + 1}: ${escapeHtml(src.source)}</span>
+                                            <span class="source-score">Sim: ${src.score}</span>
+                                        </div>
+                                        <div class="source-text">${escapeHtml(src.content)}...</div>
+                                    `;
+                                    sourcesContainer.appendChild(sourceEl);
+                                });
+                            }
+                            // Render meta
+                            metaContainer.innerHTML = `<span class="meta-model">${data.model}</span><span class="meta-time">${data.elapsed_seconds}s</span>`;
+                            saveRecentQuestion(question);
+                            scrollToBottom();
+                        }
+                    } catch (e) {
+                        console.error("Error parsing stream chunk", e);
+                    }
+                }
+            }
+        }
 
     } catch (e) {
-        typingEl.remove();
+        if (typingEl && typingEl.parentNode) typingEl.remove();
         appendMessage('assistant', `⚠️ Erreur : ${e.message}`, [], '', 0);
     }
 
