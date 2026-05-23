@@ -241,7 +241,7 @@ async function sendQuestion() {
                             sourcesData = data.sources;
                         } else if (data.type === 'token') {
                             fullText += data.token;
-                            textContainer.innerHTML = marked.parse(fullText);
+                            textContainer.innerHTML = formatMarkdown(fullText);
                             scrollToBottom();
                         } else if (data.type === 'done') {
                             // Render sources
@@ -265,7 +265,7 @@ async function sendQuestion() {
                             scrollToBottom();
                         } else if (data.type === 'error') {
                             fullText += `\n\n**⚠️ Erreur :** ${data.message}`;
-                            textContainer.innerHTML = marked.parse(fullText);
+                            textContainer.innerHTML = formatMarkdown(fullText);
                             scrollToBottom();
                         }
                     } catch (e) {
