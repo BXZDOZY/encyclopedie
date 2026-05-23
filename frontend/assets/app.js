@@ -224,15 +224,19 @@ async function sendQuestion() {
         const decoder = new TextDecoder("utf-8");
         let fullText = "";
         let sourcesData = [];
+        let buffer = "";
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n\n');
+            buffer += decoder.decode(value, { stream: true });
             
-            for (const line of lines) {
+            let boundary = buffer.indexOf('\n\n');
+            while (boundary !== -1) {
+                const line = buffer.slice(0, boundary);
+                buffer = buffer.slice(boundary + 2);
+                
                 if (line.startsWith("data: ")) {
                     try {
                         const data = JSON.parse(line.slice(6));
@@ -244,7 +248,6 @@ async function sendQuestion() {
                             textContainer.innerHTML = formatMarkdown(fullText);
                             scrollToBottom();
                         } else if (data.type === 'done') {
-                            // Render sources
                             if (sourcesData && sourcesData.length > 0) {
                                 sourcesData.forEach((src, idx) => {
                                     const sourceEl = document.createElement('div');
@@ -259,7 +262,6 @@ async function sendQuestion() {
                                     sourcesContainer.appendChild(sourceEl);
                                 });
                             }
-                            // Render meta
                             metaContainer.innerHTML = `<span class="meta-model">${data.model}</span><span class="meta-time">${data.elapsed_seconds}s</span>`;
                             saveRecentQuestion(question);
                             scrollToBottom();
@@ -269,9 +271,10 @@ async function sendQuestion() {
                             scrollToBottom();
                         }
                     } catch (e) {
-                        console.error("Error parsing stream chunk", e);
+                        console.error("Error parsing stream chunk", e, line);
                     }
                 }
+                boundary = buffer.indexOf('\n\n');
             }
         }
 
