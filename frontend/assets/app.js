@@ -203,11 +203,11 @@ async function sendQuestion() {
             throw new Error(errorMsg);
         }
 
-        typingEl.remove();
+        // DO NOT remove typingEl here. Keep it until first token arrives.
         
-        // Prepare UI for the assistant's streaming answer
+        // Prepare UI for the assistant's streaming answer, but hide it initially
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message assistant-message';
+        messageDiv.className = 'message assistant-message hidden';
         messageDiv.innerHTML = `
             <div class="message-content">
                 <div class="message-text"></div>
@@ -225,6 +225,7 @@ async function sendQuestion() {
         let fullText = "";
         let sourcesData = [];
         let buffer = "";
+        let isFirstToken = true;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -244,10 +245,20 @@ async function sendQuestion() {
                         if (data.type === 'sources') {
                             sourcesData = data.sources;
                         } else if (data.type === 'token') {
+                            if (isFirstToken) {
+                                typingEl.remove();
+                                messageDiv.classList.remove('hidden');
+                                isFirstToken = false;
+                            }
                             fullText += data.token;
                             textContainer.innerHTML = formatMarkdown(fullText);
                             scrollToBottom();
                         } else if (data.type === 'done') {
+                            if (isFirstToken) {
+                                typingEl.remove();
+                                messageDiv.classList.remove('hidden');
+                                isFirstToken = false;
+                            }
                             if (sourcesData && sourcesData.length > 0) {
                                 sourcesData.forEach((src, idx) => {
                                     const sourceEl = document.createElement('div');
@@ -266,6 +277,11 @@ async function sendQuestion() {
                             saveRecentQuestion(question);
                             scrollToBottom();
                         } else if (data.type === 'error') {
+                            if (isFirstToken) {
+                                typingEl.remove();
+                                messageDiv.classList.remove('hidden');
+                                isFirstToken = false;
+                            }
                             fullText += `\n\n**⚠️ Erreur :** ${data.message}`;
                             textContainer.innerHTML = formatMarkdown(fullText);
                             scrollToBottom();
