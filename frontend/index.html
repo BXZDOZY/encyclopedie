@@ -15,10 +15,31 @@
     <div class="bg-grain"></div>
     <div class="bg-vignette"></div>
 
+    <!-- History Sidebar -->
+    <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
+    <aside id="history-sidebar" class="history-sidebar closed">
+        <div class="sidebar-header">
+            <h3>Lectures Passées</h3>
+            <button id="btn-close-sidebar" class="btn-close-sidebar" title="Fermer" aria-label="Fermer l'historique">&times;</button>
+        </div>
+        <div class="sidebar-body">
+            <div id="history-sessions-list" class="history-sessions-list">
+                <p class="text-muted">Aucune lecture enregistrée.</p>
+            </div>
+        </div>
+    </aside>
+
     <!-- Header -->
     <header id="app-header">
         <div class="header-inner">
             <div class="logo-group">
+                <button id="btn-sidebar-toggle" class="btn-icon" title="Historique" aria-label="Afficher l'historique">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="3" y1="12" x2="21" y2="12"/>
+                        <line x1="3" y1="6" x2="21" y2="6"/>
+                        <line x1="3" y1="18" x2="21" y2="18"/>
+                    </svg>
+                </button>
                 <div class="logo-icon">
                     <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <rect x="6" y="4" width="28" height="38" rx="2" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -35,6 +56,22 @@
                 </div>
             </div>
             <div class="header-actions">
+                <button id="btn-theme-toggle" class="btn-icon" title="Changer de thème" aria-label="Changer de thème">
+                    <svg id="theme-icon-sun" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"/>
+                        <line x1="12" y1="1" x2="12" y2="3"/>
+                        <line x1="12" y1="21" x2="12" y2="23"/>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                        <line x1="1" y1="12" x2="3" y2="12"/>
+                        <line x1="21" y1="12" x2="23" y2="12"/>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                    </svg>
+                    <svg id="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </button>
                 <button id="btn-clear-chat" class="btn-icon" title="Nouvelle conversation" aria-label="Nouvelle conversation">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 5v14"/>

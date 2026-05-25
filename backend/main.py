@@ -145,10 +145,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class QuestionRequest(BaseModel):
     question: str = Field(..., min_length=3, max_length=1200)
     top_k: int = Field(default=TOP_K, ge=1, le=12)
     model: Optional[str] = None
+    history: Optional[list[ChatMessage]] = None
 
 class SourceDocument(BaseModel):
     content: str
@@ -187,35 +192,58 @@ def get_collection():
 
 # ─── Ollama Helper Functions ─────────────────────────────────────────────────
 
-async def ollama_embed(texts: list[str]) -> list[list[float]]:
-    """Get embeddings from Ollama."""
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{OLLAMA_BASE_URL}/api/embed",
-                json={"model": EMBED_MODEL, "input": texts}
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["embeddings"]
-    except httpx.TimeoutException as exc:
-        raise HTTPException(
-            status_code=504,
-            detail=f"Ollama ne répond pas assez vite avec le modèle d'embedding '{EMBED_MODEL}'."
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Erreur Ollama pendant l'embedding avec '{EMBED_MODEL}' : {exc}"
-        ) from exc
+# In-memory cache for embeddings to speed up queries and repeat lookups
+EMBEDDING_CACHE = {}
 
-async def ollama_chat(prompt: str, system: str = "", model: str = None) -> str:
-    """Chat with the Ollama model."""
+async def ollama_embed(texts: list[str]) -> list[list[float]]:
+    """Get embeddings from Ollama, utilizing an in-memory cache for efficiency."""
+    results = [None] * len(texts)
+    missing_indices = []
+    missing_texts = []
+    
+    for i, text in enumerate(texts):
+        if text in EMBEDDING_CACHE:
+            results[i] = EMBEDDING_CACHE[text]
+        else:
+            missing_indices.append(i)
+            missing_texts.append(text)
+            
+    if missing_texts:
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{OLLAMA_BASE_URL}/api/embed",
+                    json={"model": EMBED_MODEL, "input": missing_texts}
+                )
+                response.raise_for_status()
+                data = response.json()
+                embeddings = data["embeddings"]
+                for idx, text, emb in zip(missing_indices, missing_texts, embeddings):
+                    EMBEDDING_CACHE[text] = emb
+                    results[idx] = emb
+        except httpx.TimeoutException as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Ollama ne répond pas assez vite avec le modèle d'embedding '{EMBED_MODEL}'."
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Erreur Ollama pendant l'embedding avec '{EMBED_MODEL}' : {exc}"
+            ) from exc
+    return results
+
+async def ollama_chat(prompt: Optional[str] = None, system: str = "", model: str = None, messages: Optional[list[dict]] = None) -> str:
+    """Chat with the Ollama model (non-streaming)."""
     used_model = model or CHAT_MODEL
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    chat_messages = []
+    if messages:
+        chat_messages = messages
+    else:
+        if system:
+            chat_messages.append({"role": "system", "content": system})
+        if prompt:
+            chat_messages.append({"role": "user", "content": prompt})
 
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
@@ -223,7 +251,7 @@ async def ollama_chat(prompt: str, system: str = "", model: str = None) -> str:
                 f"{OLLAMA_BASE_URL}/api/chat",
                 json={
                     "model": used_model,
-                    "messages": messages,
+                    "messages": chat_messages,
                     "stream": False,
                     "options": {
                         "temperature": 0.3,
@@ -247,13 +275,17 @@ async def ollama_chat(prompt: str, system: str = "", model: str = None) -> str:
             detail=f"Erreur Ollama pendant la génération avec '{used_model}' : {exc}"
         ) from exc
 
-async def ollama_chat_stream(prompt: str, system: str = "", model: str = None):
-    """Chat with the Ollama model and stream response chunks."""
+async def ollama_chat_stream(prompt: Optional[str] = None, system: str = "", model: str = None, messages: Optional[list[dict]] = None):
+    """Chat with the Ollama model and stream response chunks along with final metrics."""
     used_model = model or CHAT_MODEL
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    chat_messages = []
+    if messages:
+        chat_messages = messages
+    else:
+        if system:
+            chat_messages.append({"role": "system", "content": system})
+        if prompt:
+            chat_messages.append({"role": "user", "content": prompt})
 
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
@@ -262,7 +294,7 @@ async def ollama_chat_stream(prompt: str, system: str = "", model: str = None):
                 f"{OLLAMA_BASE_URL}/api/chat",
                 json={
                     "model": used_model,
-                    "messages": messages,
+                    "messages": chat_messages,
                     "stream": True,
                     "options": {
                         "temperature": 0.3,
@@ -279,7 +311,14 @@ async def ollama_chat_stream(prompt: str, system: str = "", model: str = None):
                             chunk_data = json.loads(line)
                             content = chunk_data.get("message", {}).get("content", "")
                             if content:
-                                yield content
+                                yield {"type": "token", "token": content}
+                            if chunk_data.get("done", False):
+                                yield {
+                                    "type": "metrics",
+                                    "eval_count": chunk_data.get("eval_count"),
+                                    "eval_duration": chunk_data.get("eval_duration"),
+                                    "prompt_eval_count": chunk_data.get("prompt_eval_count")
+                                }
                         except Exception:
                             pass
     except httpx.TimeoutException as exc:
@@ -424,17 +463,24 @@ async def ingest_documents():
                 })
         
         if new_chunks:
-            # Get embeddings
-            embeddings = await ollama_embed(new_chunks)
-            
-            # Add to ChromaDB
-            collection.add(
-                ids=new_ids,
-                documents=new_chunks,
-                embeddings=embeddings,
-                metadatas=new_metadatas
-            )
-            total_chunks += len(new_chunks)
+            # Batch embeddings in groups of 16 to avoid timeouts on CPU
+            batch_size = 16
+            for idx in range(0, len(new_chunks), batch_size):
+                batch_chunks = new_chunks[idx : idx + batch_size]
+                batch_ids = new_ids[idx : idx + batch_size]
+                batch_metadatas = new_metadatas[idx : idx + batch_size]
+                
+                # Get embeddings for batch
+                embeddings = await ollama_embed(batch_chunks)
+                
+                # Add to ChromaDB
+                collection.add(
+                    ids=batch_ids,
+                    documents=batch_chunks,
+                    embeddings=embeddings,
+                    metadatas=batch_metadatas
+                )
+                total_chunks += len(batch_chunks)
     
     return IngestResponse(
         message=f"Indexation terminée : {len(text_files)} fichiers traités, {total_chunks} nouveaux passages indexés.",
@@ -461,7 +507,7 @@ async def upload_document(file: UploadFile = File(...)):
 
 @app.post("/api/ask")
 async def ask_question(request: QuestionRequest):
-    """Ask a question to the encyclopédie with streaming and intelligent routing."""
+    """Ask a question to the encyclopédie with streaming, intelligent routing, and conversation history."""
     start_time = time.time()
     collection = get_collection()
     question = request.question.strip()
@@ -542,18 +588,48 @@ Réponds en t'appuyant uniquement sur les extraits ci-dessus."""
 
     used_model = request.model or CHAT_MODEL
     
+    # Construct conversation history messages list
+    llm_messages = []
+    if system_prompt:
+        llm_messages.append({"role": "system", "content": system_prompt})
+        
+    if request.history:
+        for msg in request.history[-6:]:
+            llm_messages.append({"role": msg.role, "content": msg.content})
+            
+    llm_messages.append({"role": "user", "content": user_prompt})
+    
     async def sse_generator():
         # Step 1: Send sources
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
         
         # Step 2: Stream tokens from Ollama
         try:
-            async for token in ollama_chat_stream(user_prompt, system=system_prompt, model=used_model):
-                yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
-                
+            eval_count = 0
+            eval_duration = 0
+            prompt_eval_count = 0
+            
+            async for chunk in ollama_chat_stream(messages=llm_messages, model=used_model):
+                if chunk["type"] == "token":
+                    yield f"data: {json.dumps({'type': 'token', 'token': chunk['token']})}\n\n"
+                elif chunk["type"] == "metrics":
+                    eval_count = chunk.get("eval_count") or 0
+                    eval_duration = chunk.get("eval_duration") or 0
+                    prompt_eval_count = chunk.get("prompt_eval_count") or 0
+                    
             # Step 3: Send final metadata (elapsed time, etc.)
             elapsed = time.time() - start_time
-            yield f"data: {json.dumps({'type': 'done', 'elapsed_seconds': round(elapsed, 2), 'model': used_model})}\n\n"
+            eval_sec = eval_duration / 1e9 if eval_duration > 0 else elapsed
+            tokens_per_sec = round(eval_count / eval_sec, 1) if eval_count > 0 and eval_sec > 0 else 0
+            
+            yield f"data: {json.dumps({
+                'type': 'done', 
+                'elapsed_seconds': round(elapsed, 2), 
+                'model': used_model,
+                'eval_count': eval_count,
+                'prompt_eval_count': prompt_eval_count,
+                'tokens_per_second': tokens_per_sec
+            })}\n\n"
         except Exception as e:
             error_msg = str(e.detail) if hasattr(e, 'detail') else str(e)
             yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"

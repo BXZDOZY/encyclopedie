@@ -30,13 +30,31 @@ const topKValue = document.getElementById('top-k-value');
 const recentQuestions = document.getElementById('recent-questions');
 const recentList = document.getElementById('recent-list');
 
+// Sidebar and Theme Elements
+const btnSidebarToggle = document.getElementById('btn-sidebar-toggle');
+const btnCloseSidebar = document.getElementById('btn-close-sidebar');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+const historySidebar = document.getElementById('history-sidebar');
+const historySessionsList = document.getElementById('history-sessions-list');
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
+const themeIconSun = document.getElementById('theme-icon-sun');
+const themeIconMoon = document.getElementById('theme-icon-moon');
+
 let isLoading = false;
 const SETTINGS_KEY = 'encyclopedie-settings';
 const RECENT_KEY = 'encyclopedie-recent-questions';
+const SESSIONS_KEY = 'encyclopedie-sessions';
+
+// Conversational context states
+let currentSessionId = null;
+let currentSessionMessages = []; // List of {role: 'user'|'assistant', content: '...', sources: [...], model: '...', elapsed: 0, speed: 0, tokens: 0}
+let allSessions = {};
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {
     restoreSettings();
+    initTheme();
+    initSessions();
     renderRecentQuestions();
     checkStatus();
     setupEventListeners();
@@ -56,7 +74,10 @@ function setupEventListeners() {
         autoResizeTextarea();
         btnSend.disabled = !questionInput.value.trim();
     });
-    btnClearChat.addEventListener('click', clearChat);
+    btnClearChat.addEventListener('click', () => {
+        createNewSession();
+        clearChat();
+    });
     modelSelect.addEventListener('change', saveSettings);
     topKInput.addEventListener('input', () => {
         topKValue.textContent = topKInput.value;
@@ -81,8 +102,20 @@ function setupEventListeners() {
     modalOverlay.addEventListener('click', (e) => {
         if (e.target === modalOverlay) closeModal();
     });
+
+    // Sidebar Listeners
+    btnSidebarToggle.addEventListener('click', openSidebar);
+    btnCloseSidebar.addEventListener('click', closeSidebar);
+    sidebarOverlay.addEventListener('click', closeSidebar);
+
+    // Theme Toggle
+    btnThemeToggle.addEventListener('click', toggleTheme);
+
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeModal();
+        if (e.key === 'Escape') {
+            closeModal();
+            closeSidebar();
+        }
     });
 
     // Admin actions
@@ -186,17 +219,23 @@ async function sendQuestion() {
     welcomeSection.classList.add('hidden');
     chatMessages.classList.remove('hidden');
 
-    // Add user message
+    // Add user message to UI and session context
     appendMessage('user', question);
+    currentSessionMessages.push({ role: 'user', content: question });
 
     // Show typing indicator
     const typingEl = appendTyping();
+
+    // Prepare payload history for the API
+    const historyPayload = currentSessionMessages
+        .slice(0, -1) // exclude current question
+        .map(m => ({ role: m.role, content: m.content }));
 
     try {
         const response = await fetch(`${API_BASE}/api/ask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, top_k: topK, model: selectedModel })
+            body: JSON.stringify({ question, top_k: topK, model: selectedModel, history: historyPayload })
         });
 
         if (!response.ok) {
@@ -205,17 +244,15 @@ async function sendQuestion() {
             throw new Error(errorMsg);
         }
 
-        // DO NOT remove typingEl here. Keep it until first token arrives.
-        
         // Prepare UI for the assistant's streaming answer, but hide it initially
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message assistant-message hidden';
+        messageDiv.className = 'message message-assistant hidden'; // FIXED CSS class
         messageDiv.innerHTML = `
-            <div class="message-content">
+            <div class="message-bubble">
                 <div class="message-text"></div>
-                <div class="sources-container" style="margin-top: 15px;"></div>
-                <div class="message-meta" style="margin-top: 10px;"></div>
+                <div class="sources-panel sources-container hidden" style="margin-top: 15px;"></div>
             </div>
+            <div class="message-meta" style="margin-top: 10px;"></div>
         `;
         chatMessages.appendChild(messageDiv);
         const textContainer = messageDiv.querySelector('.message-text');
@@ -262,21 +299,51 @@ async function sendQuestion() {
                                 messageDiv.classList.remove('hidden');
                                 isFirstToken = false;
                             }
+                            
+                            // Render sources if available
                             if (sourcesData && sourcesData.length > 0) {
+                                sourcesContainer.classList.remove('hidden');
+                                sourcesContainer.innerHTML = `
+                                    <div class="sources-title">Sources consultées</div>
+                                    <div class="sources-list"></div>
+                                `;
+                                const listEl = sourcesContainer.querySelector('.sources-list');
                                 sourcesData.forEach((src, idx) => {
-                                    const sourceEl = document.createElement('div');
+                                    const sourceEl = document.createElement('details');
                                     sourceEl.className = 'source-card';
                                     sourceEl.innerHTML = `
-                                        <div class="source-header">
-                                            <span class="source-title">Source ${idx + 1}: ${escapeHtml(src.source)}</span>
-                                            <span class="source-score">Sim: ${src.score}</span>
-                                        </div>
-                                        <div class="source-text">${escapeHtml(src.content)}...</div>
+                                        <summary>
+                                            <span class="source-rank">${idx + 1}</span>
+                                            <span class="source-name">${escapeHtml(src.source)}</span>
+                                            <span class="source-score">${Math.max(0, src.score * 100).toFixed(0)}%</span>
+                                        </summary>
+                                        <p>${escapeHtml(src.content)}</p>
                                     `;
-                                    sourcesContainer.appendChild(sourceEl);
+                                    listEl.appendChild(sourceEl);
                                 });
                             }
-                            metaContainer.innerHTML = `<span class="meta-model">${data.model}</span><span class="meta-time">${data.elapsed_seconds}s</span>`;
+                            
+                            // Render detailed performance badges
+                            metaContainer.innerHTML = `
+                                <span class="meta-badge">${escapeHtml(data.model)}</span>
+                                <span class="meta-badge">${data.elapsed_seconds}s</span>
+                                ${data.eval_count ? `<span class="meta-badge">${data.eval_count} tokens</span>` : ''}
+                                ${data.tokens_per_second ? `<span class="meta-badge meta-badge-speed">${data.tokens_per_second} tok/s</span>` : ''}
+                                <button class="btn-copy" data-copy-answer title="Copier la réponse" aria-label="Copier la réponse">Copier</button>
+                            `;
+                            
+                            // Add current response to session and save
+                            currentSessionMessages.push({
+                                role: 'assistant',
+                                content: fullText,
+                                sources: sourcesData,
+                                model: data.model,
+                                elapsed: data.elapsed_seconds,
+                                tokens: data.eval_count,
+                                speed: data.tokens_per_second
+                            });
+                            saveSessionToStorage(currentSessionId, currentSessionMessages);
+                            
                             saveRecentQuestion(question);
                             scrollToBottom();
                         } else if (data.type === 'error') {
@@ -376,9 +443,167 @@ async function handleFileUpload() {
     fileInput.value = '';
 }
 
+// ── Theme Management ──
+function initTheme() {
+    const savedTheme = localStorage.getItem('encyclopedie-theme') || 'dark';
+    if (savedTheme === 'light') {
+        document.body.classList.add('light-theme');
+        themeIconSun.classList.remove('hidden');
+        themeIconMoon.classList.add('hidden');
+    } else {
+        document.body.classList.remove('light-theme');
+        themeIconSun.classList.add('hidden');
+        themeIconMoon.classList.remove('hidden');
+    }
+}
+
+function toggleTheme() {
+    const isLight = document.body.classList.toggle('light-theme');
+    localStorage.setItem('encyclopedie-theme', isLight ? 'light' : 'dark');
+    if (isLight) {
+        themeIconSun.classList.remove('hidden');
+        themeIconMoon.classList.add('hidden');
+    } else {
+        themeIconSun.classList.add('hidden');
+        themeIconMoon.classList.remove('hidden');
+    }
+}
+
+// ── Conversational History / Sidebar Management ──
+function initSessions() {
+    try {
+        allSessions = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '{}');
+    } catch (e) {
+        allSessions = {};
+    }
+    renderSidebarSessions();
+    createNewSession();
+}
+
+function createNewSession() {
+    if (currentSessionMessages.length > 0 && currentSessionId) {
+        saveSessionToStorage(currentSessionId, currentSessionMessages);
+    }
+    currentSessionId = 'session_' + Date.now();
+    currentSessionMessages = [];
+}
+
+function saveSessionToStorage(id, messages) {
+    if (messages.length === 0) return;
+    
+    let title = "Lecture sans titre";
+    const firstUserMsg = messages.find(m => m.role === 'user');
+    if (firstUserMsg) {
+        title = firstUserMsg.content.slice(0, 30);
+        if (firstUserMsg.content.length > 30) title += '...';
+    }
+    
+    allSessions[id] = {
+        id: id,
+        title: title,
+        messages: messages,
+        timestamp: Date.now()
+    };
+    
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(allSessions));
+    renderSidebarSessions();
+}
+
+window.loadSession = function(id) {
+    const session = allSessions[id];
+    if (!session) return;
+    
+    if (currentSessionMessages.length > 0 && currentSessionId) {
+        saveSessionToStorage(currentSessionId, currentSessionMessages);
+    }
+    
+    currentSessionId = id;
+    currentSessionMessages = session.messages || [];
+    
+    chatMessages.innerHTML = '';
+    
+    if (currentSessionMessages.length === 0) {
+        welcomeSection.classList.remove('hidden');
+        chatMessages.classList.add('hidden');
+    } else {
+        welcomeSection.classList.add('hidden');
+        chatMessages.classList.remove('hidden');
+        
+        currentSessionMessages.forEach(msg => {
+            appendMessage(
+                msg.role, 
+                msg.content, 
+                msg.sources || [], 
+                msg.model || '', 
+                msg.elapsed || 0, 
+                msg.tokens || 0, 
+                msg.speed || 0, 
+                false
+            );
+        });
+    }
+    
+    closeSidebar();
+};
+
+window.deleteSession = function(id, event) {
+    if (event) event.stopPropagation();
+    
+    if (!confirm('Supprimer cette conversation de l\'historique ?')) return;
+    
+    delete allSessions[id];
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(allSessions));
+    
+    if (currentSessionId === id) {
+        currentSessionId = 'session_' + Date.now();
+        currentSessionMessages = [];
+        clearChat();
+    }
+    
+    renderSidebarSessions();
+};
+
+function renderSidebarSessions() {
+    const sessions = Object.values(allSessions).sort((a, b) => b.timestamp - a.timestamp);
+    
+    if (sessions.length === 0) {
+        historySessionsList.innerHTML = '<p class="text-muted">Aucune lecture enregistrée.</p>';
+        return;
+    }
+    
+    historySessionsList.innerHTML = sessions.map(s => {
+        const dateStr = new Date(s.timestamp).toLocaleDateString('fr-FR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        const activeClass = s.id === currentSessionId ? ' active' : '';
+        return `
+            <div class="history-item${activeClass}" onclick="loadSession('${s.id}')">
+                <div class="history-item-title">${escapeHtml(s.title)}</div>
+                <div class="history-item-meta">
+                    <span>${dateStr}</span>
+                    <span>${s.messages.length} messages</span>
+                </div>
+                <button class="btn-delete-history" onclick="deleteSession('${s.id}', event)" title="Supprimer">&times;</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function openSidebar() {
+    historySidebar.classList.remove('closed');
+    sidebarOverlay.classList.remove('hidden');
+    renderSidebarSessions();
+}
+
+function closeSidebar() {
+    historySidebar.classList.add('closed');
+    sidebarOverlay.classList.add('hidden');
+}
+
 // ── DOM Helpers ──
 
-function appendMessage(role, content, sources = [], model = '', elapsed = 0) {
+function appendMessage(role, content, sources = [], model = '', elapsed = 0, tokens = 0, speed = 0, saveToSession = true) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `message message-${role}`;
 
@@ -409,15 +634,29 @@ function appendMessage(role, content, sources = [], model = '', elapsed = 0) {
 
         const metaHtml = model ? `
             <div class="message-meta">
-                <span>Modèle : ${escapeHtml(model)}</span>
-                <span aria-hidden="true">•</span>
-                <span>${elapsed}s</span>
+                <span class="meta-badge">${escapeHtml(model)}</span>
+                <span class="meta-badge">${elapsed}s</span>
+                ${tokens ? `<span class="meta-badge">${tokens} tokens</span>` : ''}
+                ${speed ? `<span class="meta-badge meta-badge-speed">${speed} tok/s</span>` : ''}
                 <button class="btn-copy" data-copy-answer title="Copier la réponse" aria-label="Copier la réponse">Copier</button>
             </div>` : '';
 
         msgDiv.innerHTML = `
             <div class="message-bubble" data-answer="${escapeAttr(content)}">${formattedContent}${sourcesHtml}</div>
             ${metaHtml}`;
+            
+        if (saveToSession && currentSessionId) {
+            currentSessionMessages.push({
+                role: 'assistant',
+                content: content,
+                sources: sources,
+                model: model,
+                elapsed: elapsed,
+                tokens: tokens,
+                speed: speed
+            });
+            saveSessionToStorage(currentSessionId, currentSessionMessages);
+        }
     }
 
     chatMessages.appendChild(msgDiv);
@@ -444,7 +683,6 @@ function scrollToBottom() {
 }
 
 function formatMarkdown(text) {
-    // Basic markdown formatting
     let html = escapeHtml(text);
     
     // Bold
@@ -452,10 +690,20 @@ function formatMarkdown(text) {
     // Italic
     html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
     // Line breaks to paragraphs
-    html = html.split('\n\n').map(p => `<p>${p.trim()}</p>`).join('');
+    let paragraphs = html.split('\n\n').map(p => p.trim()).filter(Boolean);
+    if (paragraphs.length > 0) {
+        // Appliquer la lettrine sur le tout premier paragraphe
+        paragraphs[0] = `<p class="dropcap">${paragraphs[0]}</p>`;
+        for (let i = 1; i < paragraphs.length; i++) {
+            paragraphs[i] = `<p>${paragraphs[i]}</p>`;
+        }
+        html = paragraphs.join('');
+    } else {
+        html = `<p class="dropcap">${html}</p>`;
+    }
     // Single line breaks
     html = html.replace(/\n/g, '<br>');
-    // Lists (— or - at start of line)
+    // Lists
     html = html.replace(/<br>[\s]*[—\-]\s/g, '</p><p>• ');
     
     return html;
@@ -523,13 +771,13 @@ function getRecentQuestions() {
     }
 }
 
-function renderRecentQuestions() {
+window.renderRecentQuestions = function() {
     const recent = getRecentQuestions();
     recentQuestions.classList.toggle('hidden', recent.length === 0);
     recentList.innerHTML = recent.map(question => `
         <button class="recent-question" data-recent-question="${escapeAttr(question)}">${escapeHtml(question)}</button>
     `).join('');
-}
+};
 
 function clearChat() {
     chatMessages.innerHTML = '';

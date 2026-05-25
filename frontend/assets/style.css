@@ -492,3 +492,201 @@ body {
   .select-control select { max-width: 150px; }
   .range-control input { width: 70px; }
 }
+
+/* ── Light Parchment Theme ── */
+body.light-theme {
+  --bg-deep: #f6efe2;
+  --bg-primary: #fdfaf3;
+  --bg-secondary: #ebdcb9;
+  --bg-card: rgba(253, 250, 243, 0.85);
+  --bg-glass: rgba(15, 13, 10, 0.03);
+  --bg-glass-hover: rgba(15, 13, 10, 0.06);
+  
+  --text-primary: #2d261e;
+  --text-secondary: #574b3d;
+  --text-muted: #8b7d6c;
+  --text-accent: #b07e2a;
+  
+  --gold: #b07e2a;
+  --gold-dim: rgba(176, 126, 42, 0.08);
+  --gold-glow: rgba(176, 126, 42, 0.25);
+  --burgundy: #a63f3f;
+  --burgundy-dim: rgba(166, 63, 63, 0.1);
+  --emerald: #2d6b4d;
+  --emerald-dim: rgba(45, 107, 77, 0.1);
+  
+  --border: rgba(176, 126, 42, 0.16);
+  --border-hover: rgba(176, 126, 42, 0.35);
+}
+
+body.light-theme .bg-vignette {
+  background: radial-gradient(ellipse at center, transparent 40%, var(--bg-deep) 100%);
+}
+
+/* ── Lettrine Vintage (Drop Cap) ── */
+.dropcap::first-letter {
+  font-family: var(--font-serif);
+  font-size: 3.2rem;
+  font-weight: 700;
+  float: left;
+  line-height: 0.8;
+  margin: 6px 10px 2px 0;
+  color: var(--gold);
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.05);
+}
+
+/* ── Sidebar d'Historique ── */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 150;
+  transition: opacity 0.3s ease;
+}
+.sidebar-overlay.hidden {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.history-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border);
+  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
+  z-index: 160;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.history-sidebar.closed {
+  transform: translateX(-100%);
+}
+
+.sidebar-header {
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-header h3 {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  color: var(--gold);
+  letter-spacing: 0.02em;
+}
+
+.btn-close-sidebar {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.2s;
+}
+.btn-close-sidebar:hover {
+  color: var(--gold);
+}
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.sidebar-body::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.history-sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all 0.2s var(--ease);
+  position: relative;
+  text-align: left;
+}
+.history-item:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-hover);
+}
+.history-item.active {
+  background: var(--gold-dim);
+  border-color: var(--gold);
+}
+
+.history-item-title {
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 20px;
+}
+.history-item-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.btn-delete-history {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+  padding: 2px;
+}
+.history-item:hover .btn-delete-history {
+  opacity: 1;
+}
+.btn-delete-history:hover {
+  color: var(--burgundy);
+}
+
+/* ── Métriques de Génération ── */
+.meta-badge {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+}
+.meta-badge-speed {
+  background: var(--gold-dim);
+  color: var(--gold);
+  border-color: rgba(212, 162, 78, 0.25);
+  font-weight: 500;
+}
