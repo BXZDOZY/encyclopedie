@@ -104,7 +104,7 @@ KEYWORDS_ROUTING = {
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "mistral")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen2.5:1.5b")
 
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 150
